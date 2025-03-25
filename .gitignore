@@ -1,7 +1,50 @@
-# Byte-compiled / optimized / DLL files
+# Environment variables
+.env
+
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Logs
+*.log
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
 
 # C extensions
 *.so
@@ -56,7 +99,6 @@ cover/
 *.pot
 
 # Django stuff:
-*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -128,13 +170,10 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
-.venv
 env/
-venv/
+venv.bak/
 ENV/
 env.bak/
-venv.bak/
 
 # Spyder project settings
 .spyderproject
@@ -159,13 +198,6 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
 
 # Ruff stuff:
 .ruff_cache/

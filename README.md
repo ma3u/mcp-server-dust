@@ -123,3 +123,142 @@ To configure Claude Desktop for use with this MCP server:
 
 5. **Testing in Claude Desktop**:
 - Type i:"Use Systemsthinking Agent to explain MCP Protocol."
+
+## Dust.tt API Workflow
+
+The MCP Server interfaces with Dust.tt's API through a multi-step workflow. Each Claude request that uses the Dust agent follows this process:
+
+### 1. Create a New Conversation
+
+First, the server creates a new conversation with the Dust agent:
+
+```bash
+curl -X POST "https://dust.tt/api/v1/w/{WORKSPACE_ID}/assistant/conversations" \
+  -H "Authorization: Bearer {YOUR_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Systems Thinking Conversation",
+    "model": "claude-3-opus-20240229"
+  }'
+```
+
+This returns a conversation ID that's used in subsequent requests:
+
+```json
+{
+  "conversation": {
+    "sId": "DhvpbhW74S",
+    "title": "Systems Thinking Conversation",
+    "created_at": 1742923287427
+  }
+}
+```
+
+### 2. Send a Message to the Conversation
+
+Next, the server sends the user's query as a message to the conversation:
+
+```bash
+curl -X POST "https://dust.tt/api/v1/w/{WORKSPACE_ID}/assistant/conversations/{CONVERSATION_ID}/messages" \
+  -H "Authorization: Bearer {YOUR_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Explain the MCP Protocol in detail",
+    "mentions": [{
+      "configurationId": "{AGENT_ID}",
+      "context": {
+        "timezone": "Europe/Berlin",
+        "modelSettings": {"provider": "anthropic"}
+      }
+    }],
+    "context": {
+      "timezone": "Europe/Berlin"
+    }
+  }'
+```
+
+The response includes the message ID:
+
+```json
+{
+  "message": {
+    "sId": "qwenj3rusI",
+    "conversation_sId": "DhvpbhW74S",
+    "content": "Explain the MCP Protocol in detail",
+    "author_name": "User",
+    "author_type": "user",
+    "created_at": 1742923287627
+  }
+}
+```
+
+### 3. Retrieve Messages from the Conversation
+
+Finally, the server retrieves the agent's response. This requires a specific format for the message retrieval request:
+
+```bash
+curl -X POST "https://dust.tt/api/v1/w/{WORKSPACE_ID}/assistant/conversations/{CONVERSATION_ID}/messages" \
+  -H "Authorization: Bearer {YOUR_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "RETRIEVAL_QUERY",
+    "mentions": [{
+      "configurationId": "{AGENT_ID}",
+      "context": {
+        "timezone": "Europe/Berlin",
+        "modelSettings": {"provider": "anthropic"}
+      }
+    }],
+    "context": {
+      "timezone": "Europe/Berlin",
+      "username": "api_retrieval",
+      "queryType": "history_analysis"
+    }
+  }'
+```
+
+The response contains all messages in the conversation, including the agent's response:
+
+```json
+{
+  "messages": [
+    {
+      "id": "msg_user123",
+      "role": "user",
+      "content": "Explain the MCP Protocol in detail",
+      "timestamp": 1742923287627,
+      "status": "processed"
+    },
+    {
+      "id": "msg_agent456",
+      "role": "assistant",
+      "content": "The MCP (Mission Control Protocol) is a framework designed for...",
+      "timestamp": 1742923290000,
+      "status": "processed"
+    }
+  ]
+}
+```
+
+### Important Notes About the API
+
+- The message retrieval endpoint serves a dual purpose - it can be used to create new messages OR retrieve conversation history
+- For message retrieval, a properly structured payload is required even though it's essentially a GET operation
+- The content field is required and must be at least one character (we use "RETRIEVAL_QUERY" as a placeholder)
+- The mentions and context fields must be structured correctly as shown above
+- You need to poll this endpoint multiple times until the agent's response appears
+
+### Error Handling
+
+Common errors when working with the Dust.tt API:
+
+- **400 Bad Request**: Often indicates malformed JSON or missing required fields in your request payload
+- **401 Unauthorized**: Check your API key
+- **404 Not Found**: Verify your workspace ID and conversation ID
+- **429 Too Many Requests**: You've exceeded API rate limits
+
+For debugging purposes, the server logs all API requests in curl format so you can reproduce and troubleshoot them manually.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.

@@ -37,13 +37,23 @@ A custom MCP (Multi-Cloud Provider) server that connects to the Dust.tt agent pl
 
    ```bash
    pip install --upgrade pip
-   pip install mcp requests
+   pip install mcp requests python-dotenv
    ```
 
 4. Configure the Dust agent:
-   - Replace the placeholder values in the configuration with your actual Dust agent details.
+   - Create a `.env` file in the root directory with your configuration:
+   ```
+   DUST_AGENT_ID=your_agent_id
+   DUST_DOMAIN=https://dust.tt
+   DUST_WORKSPACE_ID=your_workspace_id
+   DUST_WORKSPACE_NAME=your_workspace_name
+   DUST_API_KEY=your_api_key
+   DUST_AGENT_NAME=your_agent_name
+   ```
+   - This approach keeps your API keys secure and out of your code
+   - Make sure to add `.env` to your `.gitignore` file to prevent committing sensitive information
 
-The server configuration is done in the server.py file. The following parameters can be modified:
+The server configuration parameters in server.py are now loaded from environment variables with fallbacks:
 
 ### MCP Server Configuration
 
@@ -52,17 +62,6 @@ MCP_NAME = "Dust MCP Server"  # Name of your MCP server
 MCP_HOST = "127.0.0.1"        # Host to run the server on
 MCP_PORT = 5001               # Port to run the server on
 MCP_TIMEOUT = 30              # Request timeout in seconds
-```
-
-### Dust Agent Configuration:
-
-``` python
-DUST_AGENT_ID = "8x9nuWdMnR"           # The ID of your Dust agent
-DUST_DOMAIN = "https://dust.tt"           # Dust API domain
-DUST_WORKSPACE_ID = "11453f1c9e"   # Your Dust workspace ID
-DUST_WORKSPACE_NAME = "WorkwithAI_Launchpad"    # Your Dust workspace name
-DUST_API_KEY = "sk-XXX"             # Your Dust API key
-DUST_AGENT_NAME = "SystemsThinking"             # Name of your Dust agent
 ```
 
 ## Running the Server
@@ -122,14 +121,5 @@ To configure Claude Desktop for use with this MCP server:
     - Relaunch Claude Desktop for the new configuration to take effect
    - Verify the connection by checking if your server appears in the list in the Developer settings
 
-5. **Testing the Connection**:
-   {
-     "specification_hash": "latest",
-     "inputs": [
-       {
-         "query": "your question",
-         "use_rag_search": true,
-         "use_web_navigation": true
-       }
-     ]
-   }
+5. **Testing in Claude Desktop**:
+- Type i:"Use Systemsthinking Agent to explain MCP Protocol."

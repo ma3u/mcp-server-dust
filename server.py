@@ -3,9 +3,18 @@ import signal
 import requests
 import json
 import os
+import logging
 from typing import Dict, Any, Optional
 import time
 from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [dust] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S.%fZ'
+)
+logger = logging.getLogger("dust")
 
 # Load environment variables from .env file
 load_dotenv()
@@ -21,7 +30,7 @@ DUST_AGENT_ID = os.getenv("DUST_AGENT_ID", "8x9nuWdMnR")
 DUST_DOMAIN = os.getenv("DUST_DOMAIN", "https://dust.tt")
 DUST_WORKSPACE_ID = os.getenv("DUST_WORKSPACE_ID", "11453f1c9e")
 DUST_WORKSPACE_NAME = os.getenv("DUST_WORKSPACE_NAME", "WorkwithAI_Launchpad")
-DUST_API_KEY = os.getenv("DUST_API_KEY", "sk-28a4168f60a9b865380a0e350e5fd193")
+DUST_API_KEY = os.getenv("DUST_API_KEY", "store SECRETS in .env file")
 DUST_AGENT_NAME = os.getenv("DUST_AGENT_NAME", "SystemsThinking")
 
 # Conversation state (global to maintain conversation)
@@ -30,7 +39,7 @@ LAST_MESSAGE_ID = None
 
 # handle SIGINT (Ctrl+C) for gracefully shutdown
 def signal_handler(sig, frame):
-    print("\nShutting down mcp dust server...")
+    logger.info("Shutting down mcp dust server...")
     exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -74,46 +83,72 @@ def dust_systems_thinking(query: str, new_conversation: bool = False) -> Dict[An
                 "agent_configuration_id": DUST_AGENT_ID
             }
             
-            print(f"Creating new conversation with: {create_url}")
-            print(f"Payload: {json.dumps(create_payload, indent=2)}")
+            logger.info(f"Creating new conversation with: {create_url}")
+            logger.debug(f"Payload: {json.dumps(create_payload, indent=2)}")
             
-            create_response = requests.post(create_url, headers=headers, json=create_payload)
-            create_response.raise_for_status()
-            create_data = create_response.json()
-            
-            CONVERSATION_ID = create_data.get("conversation", {}).get("sId")
-            print(f"Created new conversation with ID: {CONVERSATION_ID}")
-            
-            if not CONVERSATION_ID:
-                raise ValueError("Failed to get conversation ID from response")
+            try:
+                create_response = requests.post(create_url, headers=headers, json=create_payload)
+                create_response.raise_for_status()
+                create_data = create_response.json()
+                
+                logger.debug(f"Create conversation response: {json.dumps(create_data, indent=2)}")
+                
+                # Extract conversation ID correctly from the response
+                if "conversation" in create_data and "sId" in create_data["conversation"]:
+                    CONVERSATION_ID = create_data["conversation"]["sId"]
+                    logger.info(f"Step 1: Created new conversation with ID: {CONVERSATION_ID}")
+                else:
+                    error_msg = f"Step 1: Unexpected response format: {json.dumps(create_data)}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Step 1: Failed to create conversation: {str(e)}"
+                logger.error(error_msg)
+                return {"error": error_msg}
+                
         else:
-            print(f"Continuing conversation with ID: {CONVERSATION_ID}")
+            logger.info(f"Step 1: Continuing conversation with ID: {CONVERSATION_ID}")
         
         # Step 2: Send a message to the conversation
         message_url = f"{DUST_DOMAIN}/api/v1/w/{DUST_WORKSPACE_ID}/assistant/conversations/{CONVERSATION_ID}/messages"
         message_payload = {
-            "content": query
+            "message": {
+                "content": query,
+                "role": "USER"
+            }
         }
         
-        print(f"Sending message to: {message_url}")
-        print(f"Payload: {json.dumps(message_payload, indent=2)}")
+        logger.info(f"Sending message to: {message_url}")
+        logger.debug(f"Payload: {json.dumps(message_payload, indent=2)}")
         
-        message_response = requests.post(message_url, headers=headers, json=message_payload)
-        message_response.raise_for_status()
-        message_data = message_response.json()
-        
-        LAST_MESSAGE_ID = message_data.get("message", {}).get("sId")
-        print(f"Sent message with ID: {LAST_MESSAGE_ID}")
-        
-        if not LAST_MESSAGE_ID:
-            raise ValueError("Failed to get message ID from response")
+        try:
+            message_response = requests.post(message_url, headers=headers, json=message_payload)
+            message_response.raise_for_status()
+            message_data = message_response.json()
+            
+            logger.debug(f"Send message response: {json.dumps(message_data, indent=2)}")
+            
+            # Extract message ID correctly
+            if "message" in message_data and "sId" in message_data["message"]:
+                LAST_MESSAGE_ID = message_data["message"]["sId"]
+                logger.info(f"Step 2: Sent message with ID: {LAST_MESSAGE_ID}")
+            else:
+                error_msg = f"Step 2: Unexpected response format: {json.dumps(message_data)}"
+                logger.error(error_msg)
+                return {"error": error_msg}
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Step 2: Failed to send message: {str(e)}"
+            logger.error(error_msg)
+            return {"error": error_msg}
         
         # Step 3: Wait for the agent to respond (poll for events)
         events_url = f"{DUST_DOMAIN}/api/v1/w/{DUST_WORKSPACE_ID}/assistant/conversations/{CONVERSATION_ID}/messages/{LAST_MESSAGE_ID}/events"
         
         max_retries = 30
         for attempt in range(max_retries):
-            print(f"Polling for response (attempt {attempt+1}/{max_retries})...")
+            logger.debug(f"Polling for response (attempt {attempt+1}/{max_retries})...")
             events_response = requests.get(events_url, headers=headers)
             events_response.raise_for_status()
             events_data = events_response.json()
@@ -131,21 +166,22 @@ def dust_systems_thinking(query: str, new_conversation: bool = False) -> Dict[An
             
             if completed and agent_response:
                 response_text = "\n".join(agent_response)
-                print(f"Got response from agent: {response_text[:100]}...")
+                logger.info(f"Step 3: Got response from agent: {response_text[:100]}...")
                 return {"response": response_text}
             
             # If not completed, wait and try again
             time.sleep(1)
         
-        return {"error": "Timed out waiting for agent response"}
+        logger.warning("Step 3: Timed out waiting for agent response")
+        return {"error": "Step 3: Timed out waiting for agent response"}
     
     except requests.exceptions.RequestException as e:
-        error_msg = f"Request error: {str(e)}"
-        print(f"ERROR: {error_msg}")
+        error_msg = f"Step 3: Request error: {str(e)}"
+        logger.error(error_msg)
         return {"error": error_msg}
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        print(f"ERROR: {error_msg}")
+        error_msg = f"Step 3: Unexpected error: {str(e)}"
+        logger.error(error_msg)
         return {"error": error_msg}
 
 # define our mcp tool
@@ -159,6 +195,8 @@ def count_r(word:str) -> int:
         # count the numbers of lower and upper 'r' letters
         return word.count("r") + word.count("R")
     except Exception as e:
+        # log the error
+        logger.error(f"Error in count_r: {str(e)}")
         # return 0 if an error occurs
         return str(e)
 
@@ -166,11 +204,11 @@ if __name__ == "__main__":
     # start the server and add a error handling
     try:
         # get mcp hostname
-        print(f"Starting MCP server '{MCP_NAME}' on {MCP_HOST}:{MCP_PORT}")
-        print(f"Connected to Dust agent '{DUST_AGENT_NAME}' (ID: {DUST_AGENT_ID})")
+        logger.info(f"Starting MCP server '{MCP_NAME}' on {MCP_HOST}:{MCP_PORT}")
+        logger.info(f"Connected to Dust agent '{DUST_AGENT_NAME}' (ID: {DUST_AGENT_ID})")
         mcp.run()
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Server startup error: {e}")
         # sleep before exit to give time to show error message
         time.sleep(5)
         exit(1) # exit with error

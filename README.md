@@ -204,6 +204,8 @@ Type the following in Claude Desktop to test your integration:
 Use Systemsthinking Agent to explain MCP Protocol.
 ```
 
+![alt text](image-1.png)
+
 ## Troubleshooting
 
 View the log file for the Dust MCP server in Claude Desktop:

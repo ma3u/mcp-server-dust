@@ -207,13 +207,14 @@ class DustAPIClient:
                 - Agent message ID if successful, None otherwise
                 - Error dict if failed, None otherwise
         """
-        conversation_messages_url = f"{self.config.domain}/api/v1/w/{self.config.workspace_id}/assistant/conversations/{conversation_id}/messages"
+        # Get the conversation directly - this is the confirmed working approach
+        conversation_url = f"{self.config.domain}/api/v1/w/{self.config.workspace_id}/assistant/conversations/{conversation_id}"
         headers = self.config.get_headers()
         
-        logger.info(f"Step 3: Getting conversation messages from: {conversation_messages_url}")
+        logger.info(f"Step 3: Getting conversation data from: {conversation_url}")
         
         # Log the curl command at INFO level for better visibility
-        logger.info(f"CURL Command: {self.format_as_curl(conversation_messages_url, 'GET', headers)}")
+        logger.info(f"CURL Command: curl -X GET -H \"Authorization: Bearer {self.config.api_key}\" -H \"Accept: application/json\" \"{conversation_url}\"")
         
         agent_message_id = None
         user_message_found = False
@@ -221,24 +222,57 @@ class DustAPIClient:
         
         for attempt in range(max_retries):
             try:
-                # Use GET request to retrieve conversation messages
-                logger.info(f"Step 3: Attempt {attempt+1}/{max_retries} to get conversation messages")
-                messages_response = requests.get(conversation_messages_url, headers=headers)
+                # Get conversation data using the confirmed working endpoint
+                logger.info(f"Step 3: Attempt {attempt+1}/{max_retries} to get conversation data")
+                messages_response = requests.get(conversation_url, headers=headers)
                 # Log response status and content
                 logger.info(f"Response status: {messages_response.status_code}")
                 logger.info(f"Response content: {messages_response.text[:500]}..." if len(messages_response.text) > 500 else f"Response content: {messages_response.text}")
                 
+                # Additional debug logging for response structure
+                if messages_response.status_code == 200:
+                    try:
+                        resp_json = messages_response.json()
+                        if "conversation" in resp_json and "content" in resp_json["conversation"]:
+                            content = resp_json["conversation"]["content"]
+                            logger.info(f"Content array structure: {type(content)}, length: {len(content)}")
+                            if len(content) > 0:
+                                logger.info(f"First item type: {type(content[0])}, content sample: {str(content[0])[:100]}...")
+                    except Exception as e:
+                        logger.warning(f"Error inspecting response JSON structure: {e}")
+                
+                # If request fails, attempt to retry with backoff
+                if messages_response.status_code != 200:
+                    delay = min(2 * (attempt + 1), 10)  # Exponential backoff with a cap
+                    logger.info(f"Request failed, waiting {delay}s before retry {attempt+1}/{max_retries}")
+                    time.sleep(delay)
+                    continue
+                
                 messages_response.raise_for_status()
                 messages_data = messages_response.json()
                 
-                # Extract messages from the response - handle both formats
+                # Extract messages - the confirmed endpoint returns a conversation object with a content array
                 new_messages = []
-                if "messages" in messages_data:
+                if "conversation" in messages_data and "content" in messages_data["conversation"]:
+                    # Content is an array of message arrays, need to flatten
+                    content_arrays = messages_data["conversation"]["content"]
+                    for message_array in content_arrays:
+                        # Check if message_array is itself an array or a direct message object
+                        if isinstance(message_array, list):
+                            for message in message_array:
+                                new_messages.append(message)
+                        else:
+                            # Handle case where the array contains message objects directly
+                            new_messages.append(message_array)
+                    logger.info(f"Step 3: Found {len(new_messages)} messages in conversation content format")
+                elif "messages" in messages_data:
                     new_messages = messages_data["messages"]
                     logger.info(f"Step 3: Found {len(new_messages)} messages in array format")
-                elif "message" in messages_data:
-                    logger.info(f"Found single message format")
-                    new_messages = [messages_data["message"]]
+                else:
+                    logger.info(f"Unexpected response format. Response structure: {json.dumps({k: type(v).__name__ for k, v in messages_data.items()}, indent=2)}")
+                    # Add more detailed logging of the response structure
+                    logger.debug(f"Full response data: {json.dumps(messages_data)[:1000]}...")
+                    continue  # Try again if format is unexpected
                 
                 # Add new messages to our store if they're not already there
                 for msg in new_messages:
@@ -288,14 +322,17 @@ class DustAPIClient:
             except requests.exceptions.RequestException as e:
                 error = self.handle_request_error(
                     "3", 
-                    f"Failed to get messages: {str(e)}", 
-                    conversation_messages_url, "GET", headers, None
+                    f"Failed to get conversation data: {str(e)}", 
+                    conversation_url, "GET", headers, None
                 )
-                return False, None, error
+                # Don't return immediately, let's continue trying in the next iteration
+                logger.warning(f"Error in attempt {attempt+1}: {str(e)}")
+                time.sleep(min(2 * (attempt + 1), 10))  # Use same backoff strategy as above
+                continue
         
         error_msg = f"Step 3: No agent message found after {max_retries} attempts"
         logger.warning(error_msg)
-        logger.warning(f"Last request attempted: GET {conversation_messages_url}")
+        logger.warning(f"Last request attempted: GET {conversation_url}")
         return False, None, {"error": error_msg}
     
     def get_agent_response(self, conversation_id: str, agent_message_id: str, 

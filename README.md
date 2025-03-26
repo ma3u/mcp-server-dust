@@ -7,6 +7,7 @@ A custom MCP (Multi-Cloud Provider) server that connects to the Dust.tt agent pl
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
   - [Project Structure](#project-structure)
+  - [Documentation](#documentation)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
   - [Configuration](#configuration)
@@ -47,6 +48,11 @@ The project follows a modular structure for improved maintainability:
 - `api_client.py`: Contains the `DustAPIClient` class for handling API interactions with Dust.tt
 - `.env`: Environment variables file (not committed to version control)
 - `.env.example`: Template for environment variables
+- `docs.md`: Comprehensive documentation of the project architecture and API
+
+## Documentation
+
+For detailed information about the architecture, API, and troubleshooting, please refer to the [comprehensive documentation](./docs.md).
 
 ## Prerequisites
 

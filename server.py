@@ -79,7 +79,7 @@ def dust_systems_thinking(query: str, new_conversation: bool = False) -> Dict[An
         return error
     
     # Get the agent's response message
-    success, agent_message_id, error = api_client.get_agent_message(config.conversation_id, user_message_id)
+    success, agent_message_id, error = api_client.get_agent_message(config.conversation_id, user_message_id, query)
     if not success:
         return error
     

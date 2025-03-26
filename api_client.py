@@ -190,14 +190,15 @@ class DustAPIClient:
             )
             return False, None, error
     
-    def get_agent_message(self, conversation_id: str, user_message_id: str, 
-                         max_retries: int = 30) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+    def get_agent_message(self, conversation_id: str, user_message_id: str, user_query: str,
+                          max_retries: int = 30) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
         """
         Get the agent's response message to a user message.
         
         Args:
             conversation_id: The conversation ID
             user_message_id: The user message ID to find the response to
+            user_query: The actual user query to use in the retrieval payload
             max_retries: Maximum number of retries
             
         Returns:
@@ -209,79 +210,92 @@ class DustAPIClient:
         conversation_messages_url = f"{self.config.domain}/api/v1/w/{self.config.workspace_id}/assistant/conversations/{conversation_id}/messages"
         headers = self.config.get_headers()
         
-        logger.info(f"Getting conversation messages from: {conversation_messages_url}")
+        logger.info(f"Step 3: Getting conversation messages from: {conversation_messages_url}")
         
-        # Special retrieval payload for retrieving messages
-        retrieval_payload = {
-            "content": "RETRIEVAL_QUERY",
-            "mentions": [{
-                "configurationId": self.config.agent_id,
-                "context": {
-                    "timezone": self.config.timezone,
-                    "modelSettings": {"provider": "anthropic"}
-                }
-            }],
-            "context": {
-                "timezone": self.config.timezone,
-                "username": "api_retrieval",
-                "queryType": "history_analysis"
-            }
-        }
-        
-        logger.debug(self.format_as_curl(conversation_messages_url, "POST", headers, retrieval_payload))
+        # Log the curl command at INFO level for better visibility
+        logger.info(f"CURL Command: {self.format_as_curl(conversation_messages_url, 'GET', headers)}")
         
         agent_message_id = None
+        user_message_found = False
+        messages_store = []  # Store messages across retries to build a more complete view
         
         for attempt in range(max_retries):
             try:
-                messages_response = requests.post(conversation_messages_url, headers=headers, json=retrieval_payload)
+                # Use GET request to retrieve conversation messages
+                logger.info(f"Step 3: Attempt {attempt+1}/{max_retries} to get conversation messages")
+                messages_response = requests.get(conversation_messages_url, headers=headers)
+                # Log response status and content
+                logger.info(f"Response status: {messages_response.status_code}")
+                logger.info(f"Response content: {messages_response.text[:500]}..." if len(messages_response.text) > 500 else f"Response content: {messages_response.text}")
+                
                 messages_response.raise_for_status()
                 messages_data = messages_response.json()
                 
-                # Extract messages array from response
-                messages = []
+                # Extract messages from the response - handle both formats
+                new_messages = []
                 if "messages" in messages_data:
-                    messages = messages_data["messages"]
-                else:
-                    error = self.handle_request_error(
-                        "3", 
-                        f"Unexpected response format: {json.dumps(messages_data)}", 
-                        conversation_messages_url, "POST", headers, retrieval_payload
-                    )
-                    return False, None, error
+                    new_messages = messages_data["messages"]
+                    logger.info(f"Step 3: Found {len(new_messages)} messages in array format")
+                elif "message" in messages_data:
+                    logger.info(f"Found single message format")
+                    new_messages = [messages_data["message"]]
                 
-                # Look for an agent message that came after our user message
-                found = False
-                for message in messages:
-                    # First find our user message
-                    if message.get("sId") == user_message_id:
-                        found = True
+                # Add new messages to our store if they're not already there
+                for msg in new_messages:
+                    msg_id = msg.get("sId")
+                    if msg_id and not any(m.get("sId") == msg_id for m in messages_store):
+                        messages_store.append(msg)
+                
+                logger.info(f"Step 3: Total unique messages collected: {len(messages_store)}")
+                
+                # Sort messages by created time or rank if available
+                if messages_store and "created" in messages_store[0]:
+                    messages_store = sorted(messages_store, key=lambda m: m.get("created", 0))
+                elif messages_store and "rank" in messages_store[0]:
+                    messages_store = sorted(messages_store, key=lambda m: m.get("rank", 0))
+                
+                # Log all messages for debugging
+                for idx, message in enumerate(messages_store):
+                    logger.debug(f"Message {idx}: ID={message.get('sId')}, type={message.get('type')}, " 
+                                 f"author_type={message.get('author', {}).get('type')}")
+                
+                # First check if we already have what we need
+                # Find our user message and the next assistant message
+                for i, message in enumerate(messages_store):
+                    if not user_message_found and message.get("sId") == user_message_id:
+                        user_message_found = True
+                        logger.info(f"Step 3: Found user message with ID: {user_message_id}, position: {i+1}/{len(messages_store)}")
                         continue
                     
-                    # After finding user message, look for agent message
-                    if found and message.get("author", {}).get("type") == "assistant":
-                        agent_message_id = message.get("sId")
-                        logger.info(f"Step 3: Found agent response with ID: {agent_message_id}")
-                        break
+                    # Look for the first assistant message after our user message
+                    if user_message_found:
+                        is_assistant = (
+                            message.get("author", {}).get("type") == "assistant" or
+                            message.get("type") == "assistant_message" or
+                            message.get("type") == "agent_message"
+                        )
+                        
+                        if is_assistant:
+                            agent_message_id = message.get("sId")
+                            logger.info(f"Step 3: Found agent response with ID: {agent_message_id}, position: {i+1}/{len(messages_store)}")
+                            return True, agent_message_id, None
                 
-                if agent_message_id:
-                    return True, agent_message_id, None
-                
-                # Wait longer before trying again (increase from 1s to 2s)
-                logger.debug(f"No agent message found yet, waiting before retry {attempt+1}")
-                time.sleep(2)
+                # No agent message found yet, wait before trying again
+                delay = min(2 * (attempt + 1), 10)  # Exponential backoff with a cap
+                logger.info(f"No agent message found yet, waiting {delay}s before retry {attempt+1}/{max_retries}")
+                time.sleep(delay)
                 
             except requests.exceptions.RequestException as e:
                 error = self.handle_request_error(
                     "3", 
                     f"Failed to get messages: {str(e)}", 
-                    conversation_messages_url, "POST", headers, retrieval_payload
+                    conversation_messages_url, "GET", headers, None
                 )
                 return False, None, error
         
         error_msg = f"Step 3: No agent message found after {max_retries} attempts"
         logger.warning(error_msg)
-        logger.warning(f"Last curl command attempted: \n{self.format_as_curl(conversation_messages_url, 'POST', headers, retrieval_payload)}")
+        logger.warning(f"Last request attempted: GET {conversation_messages_url}")
         return False, None, {"error": error_msg}
     
     def get_agent_response(self, conversation_id: str, agent_message_id: str, 

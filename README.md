@@ -74,7 +74,7 @@ python server.py
 You should see output similar to:
 ```
 Starting MCP server 'Dust MCP Server' on 127.0.0.1:5001
-Connected to Dust agent 'SystemsThinking' (ID: 8x9nuWdMnR)
+Connected to Dust agent 'SystemsThinking' (ID: 8x9nuXXXX)
 ```
 
 The server will run until interrupted with Ctrl+C.
@@ -123,6 +123,12 @@ To configure Claude Desktop for use with this MCP server:
 
 5. **Testing in Claude Desktop**:
 - Type i:"Use Systemsthinking Agent to explain MCP Protocol."
+
+6. **Troubleshooting**:
+
+```bash
+ tail 
+```
 
 ## Dust.tt API Workflow
 

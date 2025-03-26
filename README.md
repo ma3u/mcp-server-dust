@@ -128,6 +128,8 @@ To configure Claude Desktop for use with this MCP server:
 
 The MCP Server interfaces with Dust.tt's API through a multi-step workflow. Each Claude request that uses the Dust agent follows this process:
 
+![alt text](image.png)
+
 ### 1. Create a New Conversation
 
 First, the server creates a new conversation with the Dust agent:
